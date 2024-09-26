@@ -1,7 +1,13 @@
 package com.example.demo.model;
+import com.fasterxml.jackson.annotation.JsonBackReference;
+
 public class VoteOption {
+    private String id; //Unique identifier for the vote option
     private String caption;
-    private int presentationOrder;
+    private int presentationOrder; // Display order of the option
+
+    @JsonBackReference // Prevent recursion when serializing Poll
+    private Poll poll; // Reference to the parent Poll
 
     public VoteOption() {}
 
@@ -27,7 +33,11 @@ public class VoteOption {
     }
 
     public String getId() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getId'");
+        return id;
     }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
 }
