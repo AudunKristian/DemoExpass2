@@ -11,6 +11,7 @@ import java.util.Collection;
 
 @RestController
 @RequestMapping("/polls/{pollId}/votes")
+
 public class VoteController {
 
     @Autowired

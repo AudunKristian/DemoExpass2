@@ -1,0 +1,640 @@
+File: DemoExpass2Application.java
+package com.example.demo;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@SpringBootApplication
+@RestController
+public class DemoExpass2Application {
+    public static void main(String[] args) {
+      SpringApplication.run(DemoExpass2Application.class, args);
+    }
+    @GetMapping("/")
+    public String hello(@RequestParam(value = "name", defaultValue = "World") String name) {
+      return String.format("Hello %s!", name);
+    }
+}
+--------------------------------------------------------------------------------
+File: PollController.java
+package com.example.demo.controller;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import com.example.demo.manager.PollManager;
+import com.example.demo.model.Poll;
+
+import java.util.Collection;
+
+@RestController
+@RequestMapping("/polls")
+@CrossOrigin(origins = "*")
+public class PollController {
+
+    private final PollManager pollManager;
+
+    @Autowired
+    public PollController(PollManager pollManager) {
+        this.pollManager = pollManager;
+    }
+
+    @PostMapping
+    public ResponseEntity<Poll> createPoll(@RequestBody Poll poll) {
+        try {
+            // Validate input (you may want to validate further based on your application logic)
+            if (poll.getQuestion() == null || poll.getVoteOptions() == null) {
+                return ResponseEntity.badRequest().body(null);
+            }
+
+            Poll createdPoll = pollManager.createPoll(
+                poll.getCreator().getId(), // Assuming you need a userId to associate with the poll
+                poll.getQuestion(),
+                poll.getPublishedAt(),
+                poll.getValidUntil(),
+                poll.isPublic(),
+                poll.getVoteOptions(),
+                poll.getInvitedUsers()
+            );
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(createdPoll);
+        } catch (IllegalArgumentException e) {
+            // Handle specific cases, like invalid user or parameters
+            return ResponseEntity.badRequest().body(null);
+        } catch (Exception e) {
+            // Handle unexpected exceptions
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    @GetMapping
+    public ResponseEntity<Collection<Poll>> getAllPolls() {
+        Collection<Poll> polls = pollManager.getAllPolls();
+        if (polls.isEmpty()) {
+            return ResponseEntity.noContent().build(); // No content if no polls
+        }
+        return ResponseEntity.ok(polls);
+    }
+}
+
+--------------------------------------------------------------------------------
+File: UserController.java
+package com.example.demo.controller;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import com.example.demo.manager.PollManager;
+import com.example.demo.model.User;
+import java.util.Collection;
+
+@RestController
+@RequestMapping("/users")
+@CrossOrigin(origins = "*")
+public class UserController {
+    
+    private final PollManager pollManager;
+
+    @Autowired
+    public UserController(PollManager pollManager) {
+        this.pollManager = pollManager;
+    }
+
+    @PostMapping
+    public ResponseEntity<User> createUser(@RequestBody User user) {
+        User createdUser = pollManager.createUser(user.getUsername(), user.getEmail());
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
+    }
+
+    @GetMapping
+    public ResponseEntity<Collection<User>> getAllUsers() {
+        return ResponseEntity.ok(pollManager.getAllUsers());
+    }
+}
+
+--------------------------------------------------------------------------------
+File: VoteController.java
+package com.example.demo.controller;
+
+import com.example.demo.model.Vote;
+import com.example.demo.manager.PollManager; // Ensure this import is correct
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Collection;
+
+@RestController
+@RequestMapping("/polls/{pollId}/votes")
+
+public class VoteController {
+
+    @Autowired
+    private PollManager pollManager;
+
+    @PostMapping
+    public ResponseEntity<Vote> createVote(@PathVariable String pollId, @RequestBody Vote vote, @RequestParam String userId) {
+        try {
+            // Ensure that the vote request contains necessary information
+            if (vote.getSelectedOption() == null || userId == null || userId.isEmpty()) {
+                return ResponseEntity.badRequest().build(); // Bad request if data is incomplete
+            }
+
+            // Create a vote using the pollId, userId, and the selected option
+            Vote createdVote = pollManager.castVote(userId, pollId, vote.getSelectedOption().getId());
+            return ResponseEntity.status(HttpStatus.CREATED).body(createdVote);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(null); // Return bad request for invalid inputs
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null); // Return forbidden if voting conditions aren't met
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null); // Handle unexpected errors
+        }
+    }
+
+    @GetMapping
+    public ResponseEntity<Collection<Vote>> getVotes(@PathVariable String pollId) {
+        Collection<Vote> votes = pollManager.getAllVotes(); // Get all votes
+        if (votes.isEmpty()) {
+            return ResponseEntity.noContent().build(); // No content if no votes
+        }
+        return ResponseEntity.ok(votes); // Return the list of votes
+    }
+}
+
+--------------------------------------------------------------------------------
+File: VoteOptionController.java
+package com.example.demo.controller;
+
+import com.example.demo.model.VoteOption;
+import com.example.demo.manager.PollManager;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/polls/{pollId}/options")
+@CrossOrigin(origins = "*")
+public class VoteOptionController {
+
+    @Autowired
+    private PollManager pollManager;
+
+    @PostMapping
+    public ResponseEntity<VoteOption> createVoteOption(@PathVariable String pollId, @RequestBody VoteOption voteOption) {
+        try {
+            // Validate that the vote option is not null or empty
+            if (voteOption.getCaption() == null || voteOption.getCaption().isEmpty()) {
+                return ResponseEntity.badRequest().body(null); // Bad request if the caption is missing
+            }
+
+            // Create the vote option using the pollId and the provided voteOption
+            VoteOption createdVoteOption = pollManager.createVoteOption(pollId, voteOption.getCaption(), voteOption.getPresentationOrder());
+            return ResponseEntity.status(HttpStatus.CREATED).body(createdVoteOption); // Return created status
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(null); // Return bad request for invalid inputs
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null); // Handle unexpected errors
+        }
+    }
+
+    @GetMapping
+    public ResponseEntity<List<VoteOption>> getVoteOptions(@PathVariable String pollId) {
+        List<VoteOption> voteOptions = pollManager.getVoteOptions(pollId); // Retrieve the list of vote options
+        if (voteOptions.isEmpty()) {
+            return ResponseEntity.noContent().build(); // No content if there are no vote options
+        }
+        return ResponseEntity.ok(voteOptions); // Return the list of vote options
+    }
+
+}
+
+--------------------------------------------------------------------------------
+File: PollManager.java
+package com.example.demo.manager;
+
+import org.springframework.stereotype.Component;
+import com.example.demo.model.Poll;
+import com.example.demo.model.User;
+import com.example.demo.model.Vote;
+import com.example.demo.model.VoteOption;
+
+import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Component
+public class PollManager {
+    
+    private final Map<String, User> users = new HashMap<>();
+    private final Map<String, Poll> polls = new HashMap<>();
+    private final Map<String, VoteOption> voteOptions = new HashMap<>();
+    private final Map<String, Vote> votes = new HashMap<>();
+
+    // Create a new user and register them
+    public User createUser(String username, String email) {
+        User user = new User(username, email);
+        users.put(user.getId(), user); // Assuming User has a unique ID getter
+        return user;
+    }
+
+    // Create a new poll, linked to the poll creator (user)
+    public Poll createPoll(String userId, String question, Instant publishedAt, Instant validUntil, boolean isPublic, List<VoteOption> voteOptions, List<User> invitedUsers) {
+        User creator = users.get(userId);
+        if (creator == null) {
+            throw new IllegalArgumentException("User not found");
+        }
+
+        // Create the new Poll object
+        Poll poll = new Poll(UUID.randomUUID().toString(), question, publishedAt, validUntil, creator, voteOptions, null, invitedUsers);
+        polls.put(poll.getId(), poll);
+        return poll;
+    }
+
+
+    // Create a new vote option for a specific poll
+    public VoteOption createVoteOption(String pollId, String caption, int presentationOrder) {
+        Poll poll = polls.get(pollId);
+        if (poll == null) {
+            throw new IllegalArgumentException("Poll not found");
+        }
+        VoteOption option = new VoteOption(caption, presentationOrder);
+        voteOptions.put(option.getId(), option);
+        return option;
+    }
+
+    // Cast a vote
+
+    public Vote castVote(String userId, String pollId, String voteOptionId) {
+        User user = users.get(userId);
+        Poll poll = polls.get(pollId);
+        VoteOption option = voteOptions.get(voteOptionId);
+
+        if (user == null || poll == null || option == null) {
+            throw new IllegalArgumentException("Invalid user, poll, or vote option");
+        }
+
+        // Check if the poll is private and restrict access if not invited
+        if (!poll.isPublic() && !poll.getInvitedUsers().contains(user)) {
+            throw new IllegalStateException("User is not invited to vote in this private poll.");
+        }
+
+        // Check if the vote falls within the allowed timeframe
+        Instant now = Instant.now();
+        if (now.isBefore(poll.getPublishedAt()) || now.isAfter(poll.getValidUntil())) {
+            throw new IllegalStateException("Voting is not allowed outside the poll's valid timeframe.");
+        }
+
+        // Check if this user already voted in a private poll (if limited to one vote)
+        if (!poll.isPublic() && poll.hasUserVoted(user)) {
+            throw new IllegalStateException("User is only allowed to vote once in this private poll.");
+        }
+
+        // Create a new vote
+        Vote vote = new Vote(UUID.randomUUID().toString(), now, user, poll, option);
+        votes.put(vote.getId(), vote);
+        
+
+        return vote;
+    }
+
+
+    // Get all users
+    public Collection<User> getAllUsers() {
+        return users.values();
+    }
+
+    // Get all polls
+    public Collection<Poll> getAllPolls() {
+        return polls.values();
+    }
+
+    // Get all vote options
+    public Collection<VoteOption> getAllVoteOptions() {
+        return voteOptions.values();
+    }
+
+    // Get all votes
+    public Collection<Vote> getAllVotes() {
+        return votes.values();
+    }
+
+    public List<VoteOption> getVoteOptions(String pollId) {
+        Poll poll = polls.get(pollId);
+        if (poll == null) {
+            throw new IllegalArgumentException("Poll not found");
+        }
+        return poll.getVoteOptions();
+    }
+
+}
+
+--------------------------------------------------------------------------------
+File: Poll.java
+package com.example.demo.model;
+import java.time.Instant;
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import java.util.List;
+
+public class Poll {
+    private String id; // Unique identifier for the poll
+    private String question;
+    private boolean isPublic;
+    private boolean limitVotesPerUser; // For private polls, limit votes to 1 per user
+    private Instant publishedAt;
+    private Instant validUntil;
+    private List<User> invitedUsers;
+    
+    @JsonBackReference // Prevent recursion when serializing User
+    private User creator; // Link to the poll creator
+
+    @JsonManagedReference // Poll manages VoteOption serialization
+    private List<VoteOption> voteOptions;
+
+    @JsonManagedReference // Poll manages Vote serialization
+    private List<Vote> votes;
+
+
+    public Poll() {}
+
+    public Poll(String id, String question, Instant publishedAt, Instant validUntil, User creator, List<VoteOption> voteOptions, List<Vote> votes, List<User> invitedUsers) {
+        this.id = id;
+        this.question = question;
+        this.publishedAt = publishedAt;
+        this.validUntil = validUntil;
+        this.creator = creator; 
+        this.voteOptions = voteOptions;
+        this.votes = votes;
+        this.invitedUsers = invitedUsers;
+    }
+
+    public String getQuestion() {
+        return question;
+    }
+
+    public void setQuestion(String question) {
+        this.question = question;
+    }
+
+    public Instant getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(Instant publishedAt) {
+        this.publishedAt = publishedAt;
+    }
+
+    public Instant getValidUntil() {
+        return validUntil;
+    }
+
+    public void setValidUntil(Instant validUntil) {
+        this.validUntil = validUntil;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public User getCreator() {
+        return creator;
+    }
+
+    public void setCreator(User creator) {
+        this.creator = creator;
+    }
+
+    public List<VoteOption> getVoteOptions() {
+        return voteOptions;
+    }
+
+    public void setVoteOptions(List<VoteOption> voteOptions) {
+        this.voteOptions = voteOptions;
+    }   
+
+    public List<Vote> getVotes() {
+        return votes;
+    }
+
+    public void setVotes(List<Vote> votes) {
+        this.votes = votes;
+    }
+    
+    public boolean isPublic() {
+        return isPublic;
+    }
+
+    public void setPublic(boolean isPublic) {
+        this.isPublic = isPublic;
+    }
+    
+    public boolean limitVotesPerUser() {
+        return limitVotesPerUser;
+    }
+
+    public void setLimitVotesPerUser(boolean limitVotesPerUser) {
+        this.limitVotesPerUser = limitVotesPerUser;
+    }   
+
+    public boolean hasUserVoted(User user) {
+        return votes.stream().anyMatch(vote -> vote.getVoter().equals(user));
+    }
+
+    public List<User> getInvitedUsers() {
+        return invitedUsers;
+    }
+
+    public void setInvitedUsers(List<User> invitedUsers) {
+        this.invitedUsers = invitedUsers;
+    }
+
+}
+
+--------------------------------------------------------------------------------
+File: User.java
+package com.example.demo.model;
+
+import java.util.List;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
+public class User {
+    private String id;  
+    private String username;
+    private String email;
+
+    
+    @JsonManagedReference // Prevent cyclic dependency with Poll
+    private List<Poll> pollsCreated;
+
+    @JsonManagedReference // Prevent cyclic dependency with Vote
+    private List<Vote> votes;
+    
+    
+    public User() {}
+
+
+    public User(String username, String email) {
+        this.username = username;
+        this.email = email;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+}
+
+--------------------------------------------------------------------------------
+File: Vote.java
+package com.example.demo.model;
+
+import java.time.Instant;
+import com.fasterxml.jackson.annotation.JsonBackReference;
+
+public class Vote {
+    private String id; // Unique identifier for the vote
+    private Instant publishedAt; // Timestamp of when the vote was cast
+
+    @JsonBackReference // Prevent recursion when serializing User
+    private User voter; // Reference to the voting user
+
+    @JsonBackReference // Prevent recursion when serializing Poll
+    private Poll poll; // Reference to the poll
+
+    @JsonBackReference // Prevent recursion when serializing VoteOption
+    private VoteOption selectedOption; // The option chosen by the user
+
+    // Constructor with UUID and relationships
+    public Vote(String id, Instant publishedAt, User voter, Poll poll, VoteOption selectedOption) {
+        this.id = id;
+        this.publishedAt = publishedAt;
+        this.voter = voter;
+        this.poll = poll;
+        this.selectedOption = selectedOption;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public Instant getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(Instant publishedAt) {
+        this.publishedAt = publishedAt;
+    }
+
+    public User getVoter() {
+        return voter;
+    }
+
+    public void setVoter(User voter) {
+        this.voter = voter;
+    }
+
+    public Poll getPoll() {
+        return poll;
+    }
+
+    public void setPoll(Poll poll) {
+        this.poll = poll;
+    }
+
+    public VoteOption getSelectedOption() {
+        return selectedOption;
+    }
+
+    public void setSelectedOption(VoteOption selectedOption) {
+        this.selectedOption = selectedOption;
+    }
+}
+
+--------------------------------------------------------------------------------
+File: VoteOption.java
+package com.example.demo.model;
+import com.fasterxml.jackson.annotation.JsonBackReference;
+
+public class VoteOption {
+    private String id; //Unique identifier for the vote option
+    private String caption;
+    private int presentationOrder; // Display order of the option
+
+    @JsonBackReference // Prevent recursion when serializing Poll
+    private Poll poll; // Reference to the parent Poll
+
+    public VoteOption() {}
+
+    public VoteOption(String caption, int presentationOrder) {
+        this.caption = caption;
+        this.presentationOrder = presentationOrder;
+    }
+
+    public String getCaption() {
+        return caption;
+    }
+
+    public void setCaption(String caption) {
+        this.caption = caption;
+    }
+
+    public int getPresentationOrder() {
+        return presentationOrder;
+    }
+
+    public void setPresentationOrder(int presentationOrder) {
+        this.presentationOrder = presentationOrder;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+}
+
+--------------------------------------------------------------------------------

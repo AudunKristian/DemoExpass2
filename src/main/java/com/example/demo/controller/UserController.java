@@ -10,6 +10,7 @@ import java.util.Collection;
 
 @RestController
 @RequestMapping("/users")
+@CrossOrigin(origins = "*")
 public class UserController {
     
     private final PollManager pollManager;

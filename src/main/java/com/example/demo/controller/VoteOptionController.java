@@ -11,6 +11,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/polls/{pollId}/options")
+@CrossOrigin(origins = "*")
 public class VoteOptionController {
 
     @Autowired
